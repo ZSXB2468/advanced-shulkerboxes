@@ -47,10 +47,7 @@ public abstract class BlockItemMixin {
         }
         //TODO Check for fake players
         //TODO Check if this works client side
-        if (!AdvancedShulkerboxesMod.CONFIG.sneakPlace.get()) {
-            return;
-        }
-        if (context.getPlayer().isShiftKeyDown()) {
+        if (!(AdvancedShulkerboxesMod.CONFIG.sneakPlace.get() ^ context.getPlayer().isShiftKeyDown())) {
             return;
         }
         if (context.getItemInHand().getCount() != 1) {
