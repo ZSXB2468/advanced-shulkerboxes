@@ -1,7 +1,8 @@
 package de.maxhenkel.shulkerbox.menu;
 
 import net.minecraft.core.NonNullList;
-import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -10,11 +11,11 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.Container;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.ItemContainerContents;
-import net.minecraft.world.item.component.SeededContainerLoot;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.storage.loot.LootParams;
+import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.storage.loot.LootContext;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
@@ -32,30 +33,31 @@ public class AdvancedShulkerboxContainer implements Container {
         this.invSize = invSize;
         this.items = NonNullList.withSize(getContainerSize(), ItemStack.EMPTY);
 
-        ItemContainerContents contents = shulkerBox.get(DataComponents.CONTAINER);
+        CompoundTag compoundTag = BlockItem.getBlockEntityData(shulkerBox);
+        if (compoundTag != null) {
+            if (compoundTag.contains("LootTable")) {
+                setChanged();
+                fillWithLoot(player, compoundTag);
+            }
 
-        if (contents != null) {
-            contents.copyInto(items);
-        }
-
-        SeededContainerLoot loot = shulkerBox.get(DataComponents.CONTAINER_LOOT);
-
-        if (loot != null) {
-            fillWithLoot(player, loot);
-            shulkerBox.remove(DataComponents.CONTAINER_LOOT);
+            if (compoundTag.contains("Items", 9)) {
+                ContainerHelper.loadAllItems(compoundTag, items);
+            }
         }
     }
 
-    public void fillWithLoot(@Nullable ServerPlayer player, SeededContainerLoot loot) {
-        if (player == null) {
+    public void fillWithLoot(@Nullable ServerPlayer player, CompoundTag compoundTag) {
+        if (player == null || !compoundTag.contains("LootTable")) {
             return;
         }
-        LootTable loottable = player.getServer().reloadableRegistries().getLootTable(loot.lootTable());
+        LootTable lootTable = player.server.getLootTables().get(new ResourceLocation(compoundTag.getString("LootTable")));
+        LootContext.Builder builder = (new LootContext.Builder((ServerLevel) player.level))
+                .withParameter(LootContextParams.ORIGIN, player.position())
+                .withOptionalRandomSeed(compoundTag.getLong("LootTableSeed"))
+                .withLuck(player.getLuck())
+                .withParameter(LootContextParams.THIS_ENTITY, player);
 
-        LootParams.Builder builder = new LootParams.Builder((ServerLevel) player.level());
-        builder.withLuck(player.getLuck()).withParameter(LootContextParams.THIS_ENTITY, player);
-
-        loottable.fill(this, builder.create(LootContextParamSets.CHEST), loot.seed());
+        lootTable.fill(this, builder.create(LootContextParamSets.CHEST));
         setChanged();
     }
 
@@ -96,18 +98,21 @@ public class AdvancedShulkerboxContainer implements Container {
 
     @Override
     public void setChanged() {
-        shulkerBox.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(items));
+        // 使用 NBT 保存物品数据
+        CompoundTag compoundTag = new CompoundTag();
+        ContainerHelper.saveAllItems(compoundTag, items);
+        BlockItem.setBlockEntityData(shulkerBox, BlockEntityType.SHULKER_BOX, compoundTag);
     }
 
     @Override
     public void startOpen(Player player) {
-        player.level().playSound(null, player.getX(), player.getY(), player.getZ(), getOpenSound(), SoundSource.BLOCKS, 0.5F, getVariatedPitch(player.level()));
+        player.level.playSound(null, player.getX(), player.getY(), player.getZ(), getOpenSound(), SoundSource.BLOCKS, 0.5F, getVariatedPitch(player.level));
     }
 
     @Override
     public void stopOpen(Player player) {
         setChanged();
-        player.level().playSound(null, player.getX(), player.getY(), player.getZ(), getCloseSound(), SoundSource.BLOCKS, 0.5F, getVariatedPitch(player.level()));
+        player.level.playSound(null, player.getX(), player.getY(), player.getZ(), getCloseSound(), SoundSource.BLOCKS, 0.5F, getVariatedPitch(player.level));
     }
 
     protected static float getVariatedPitch(Level world) {
@@ -137,5 +142,4 @@ public class AdvancedShulkerboxContainer implements Container {
     public boolean stillValid(Player player) {
         return player.getInventory().contains(shulkerBox);
     }
-
 }
